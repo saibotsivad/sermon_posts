@@ -108,10 +108,12 @@ $table_biblebook = $wpdb->prefix . "tlsp_book";
 
 // create the sermon ranges table
 $sql = "CREATE TABLE IF NOT EXISTS `{$table_sermon}` (
+`id` INT NOT NULL AUTO_INCREMENT,
 `sermon` INT NOT NULL,
 `start` INT NOT NULL,
 `end` INT NOT NULL,
-PRIMARY KEY( `sermon`, `start`, `end` )
+PRIMARY KEY(`id`),
+UNIQUE KEY `sermon` ( `sermon`, `start`, `end` )
 );";
 dbDelta($sql);
 

@@ -21,8 +21,10 @@ class tl_sermon_posts_admin extends tl_sermon_posts_core
 		add_action( 'admin_menu', array( $this, 'menu' ) );
 		
 		// AJAX callbacks
-		add_action('wp_ajax_tlsp_reference_verification', array( $this, 'ajax_reference_verification' ) );
-		add_action('wp_ajax_tlsp_sermon_reference_lookup', array( $this, 'ajax_sermon_reference_lookup' ) );
+		add_action('wp_ajax_tlsp_save_reference', array( $this, 'ajax_save_reference' ) );
+		add_action('wp_ajax_tlsp_add_new_reference', array( $this, 'ajax_add_new_reference' ) );
+		add_action('wp_ajax_tlsp_sermon_reference_save', array( $this, 'ajax_sermon_reference_save' ) );
+		add_action('wp_ajax_tlsp_sermon_reference_delete', array( $this, 'ajax_sermon_reference_delete' ) );
 	}
 	
 	/**
@@ -33,7 +35,10 @@ class tl_sermon_posts_admin extends tl_sermon_posts_core
 	*/
 	function admin_init()
 	{
-	
+		// register styling
+		wp_register_style( 'metabox-styling', plugins_url( 'metabox.css', __FILE__ ) );
+		wp_enqueue_style( 'metabox-styling' );
+		
 		// register an import method
 		register_importer(
 			'tlsp_importer',
@@ -41,16 +46,6 @@ class tl_sermon_posts_admin extends tl_sermon_posts_core
 			'Import sermons from the Sermon Browser plugin to the Sermon Posts plugin.',
 			array( $this, 'Importing' )
 		);
-		
-		// only do these things on the sermon_post admin page
-		if( isset( $_GET['post_type'] ) && $_GET['post_type'] == 'sermon_post' )
-		{
-		
-			// enqueu the thickbox scripts
-			wp_enqueue_script( 'thickbox' );
-			wp_enqueue_style( 'thickbox' );
-		
-		}
 	
 	}
 	
@@ -60,50 +55,142 @@ class tl_sermon_posts_admin extends tl_sermon_posts_core
 	 * @since 0.17
 	 * @author saibotsivad
 	*/
-	function ajax_reference_verification()
+	function ajax_save_reference()
 	{
-		$from_book = (int) $_POST['tlsp_from_bible_book'];
-		$from_chapter = (int) $_POST['tlsp_from_bible_chapter'];
-		$from_verse = (int) $_POST['tlsp_from_bible_verse'];
-		$through_book = (int) $_POST['tlsp_through_bible_book'];
-		$through_chapter = (int) $_POST['tlsp_through_bible_chapter'];
-		$through_verse = (int) $_POST['tlsp_through_bible_verse'];
+		// all fields required
+		try {
+			$post_id = (int) $_POST['post_id'];
+			$reference_id = (int) $_POST['reference_id'];
+			$from_book = (int) $_POST['from_book'];
+			$from_chapter = (int) $_POST['from_chapter'];
+			$from_verse = (int) $_POST['from_verse'];
+			$through_book = (int) $_POST['through_book'];
+			$through_chapter = (int) $_POST['through_chapter'];
+			$through_verse = (int) $_POST['through_verse'];
+		}
+		catch (Exception $e)
+		{
+			echo json_encode('fail');
+			die();
+		}
 		
-		$string = $from_book . " " . $from_chapter . ":" . $from_verse;
-		$string .= " through " . $through_book . " " . $through_chapter . ":" . $through_verse;
-		echo $string;
+		// generate new verse array
+		$verse = tlsp_generate_verse_range( $from_book, $from_chapter, $from_verse, $through_book, $through_chapter, $through_verse );
+		$verse['post_id'] = $post_id;
+		$verse['reference_id'] = ( empty( $reference_id ) || $reference_id == 0 ? null : $reference_id );
+		
+		// save and exit
+		$verse = tlsp_admin::save_sermon_verse_range( $verse );
+		echo json_encode($verse);
 		die();
 	}
 	
 	/**
-	 * Given a sermon id and reference id, it returns a JSON of the passage fields.
+	 * AJAX: Remove a given verse id from a post.
 	 *
 	 * @since 0.17
 	 * @author saibotsivad
 	*/
-	function ajax_sermon_reference_lookup()
+	function ajax_sermon_reference_delete()
 	{
-		$verse_id = (int) str_replace("tlsp_post_passage_", "", $_POST['tlsp_post_passage']);
-		$post_id =  (int) $_POST['tlsp_post_id'];
-		
-		//global $wpdb;
-		//$wpdb->select()
-		$verses = get_post_meta( $post_id, 'tlsp_verse_range', false );
-		if ( empty( $verses ) )
+		// we require all these fields
+		try {
+			$verse_id = (int) $_POST['verse_id'];
+			$post_id  = (int) $_POST['post_id'];
+			
+			$verse_from    = (int) $_POST['verse_from'];
+			$verse_through = (int) $_POST['verse_through'];
+		}
+		catch (Exception $e)
 		{
-			echo 'fail';
+			echo json_encode('fail');
 			die();
 		}
 		
-		echo json_encode(array(
-			'from_book' => 1,
-			'from_chapter' => 2,
-			'from_verse' => 3,
-			'through_book' => 4,
-			'through_chapter' => 5,
-			'through_verse' => 6
-		));
+		// remove the verse
+		$sermon_verses = get_post_meta( $post_id, 'tlsp_sermon_reference', true );
+		if ( isset( $sermon_verses[$verse_id] ) )
+		{
+			// remove from post_meta
+			unset( $sermon_verses[$verse_id] );
+			update_post_meta( $post_id, 'tlsp_sermon_reference', $sermon_verses );
+			
+			// remove from database
+			global $wpdb;
+			$wpdb->query( $wpdb->prepare( "DELETE FROM wp_tlsp_reference WHERE wp_tlsp_reference.sermon = %d AND wp_tlsp_reference.start = %d AND wp_tlsp_reference.end = %d",
+				$post_id, $verse_from, $verse_through ) );
+			
+			// output success
+			echo json_encode(array(
+				'status'   => 'success',
+				'verse_id' => $verse_id
+			));
+		}
+		else
+		{
+			echo json_encode('fail');
+		}
 		die();
+	}
+	
+	/**
+	 * The AJAX passage reference saving mechanism.
+	 *
+	 * @since 0.17
+	 * @author saibotsivad
+	*/
+	function ajax_sermon_reference_save()
+	{
+		// we require all of these fields
+		try {
+			$verse_id = (int) $_POST['verse_id'];
+			$post_id  = (int) $_POST['post_id'];
+			
+			$from_book       = (int) $_POST['from_book'];
+			$from_chapter    = (int) $_POST['from_chapter'];
+			$from_verse      = (int) $_POST['from_verse'];
+			$through_book    = (int) $_POST['through_book'];
+			$through_chapter = (int) $_POST['through_chapter'];
+			$through_verse   = (int) $_POST['through_verse'];
+		}
+		catch (Exception $e)
+		{
+			echo json_encode('fail');
+			die();
+		}
+		
+		// generate the verse information
+		$verse_range = tlsp_generate_verse_range( $from_book, $from_chapter, $from_verse, $through_book, $through_chapter, $through_verse );
+		
+		// add the verse range to the post_meta, overwriting the old one (if it exists)
+		$sermon_verses = get_post_meta( $post_id, 'tlsp_sermon_reference', true );
+		$sermon_verses = ( is_array( $sermon_verses ) ? $sermon_verses : array() );
+		$sermon_verses[$verse_id] = $verse_range;
+		update_post_meta( $post_id, 'tlsp_sermon_reference', $sermon_verses );
+		
+		// add the verse range to the sermon_posts table
+		global $wpdb;
+		$wpdb->query( $wpdb->prepare( "DELETE FROM wp_tlsp_reference WHERE wp_tlsp_reference.sermon = %d AND wp_tlsp_reference.start = %d AND wp_tlsp_reference.end = %d",
+			$post_id, $verse_range['from_id'], $verse_range['through_id'] ) );
+		
+		// finally, generate the output
+		$output = get_post_meta( $post_id, 'tlsp_sermon_reference', true );
+		$output = $output[$verse_id];
+		$output['verse_id'] = $verse_id;
+		echo json_encode($output);
+		die();
+	}
+	
+	/**
+	 * Add metabox and other admin styles and scripts.
+	 *
+	 * @since 0.17
+	 * @author saibotsivad
+	*/
+	function enqueue_scripts()
+	{
+		wp_register_style( 'metabox-styling', plugins_url( 'metabox.css', __FILE__ ) );
+		wp_enqueue_style( 'metabox-styling' );
 	}
 	
 	/**
@@ -242,9 +329,9 @@ class tl_sermon_posts_admin extends tl_sermon_posts_core
 	 * @since 0.01
 	 * @author saibotsivad
 	*/
-	function metabox_details()
+	function metabox_add_sermon()
 	{
-		include( 'metabox_details.php' );
+		include( 'metabox_add_sermon.php' );
 	}
 	
 	/**
@@ -269,9 +356,9 @@ class tl_sermon_posts_admin extends tl_sermon_posts_core
 	
 		// the metabox for passages, preachers, etc.
 		add_meta_box(
-			'tlsp_metabox_details',
+			'tlsp_metabox_add_sermon',
 			'Sermon Details',
-			array( $this, 'metabox_details' ),
+			array( $this, 'metabox_add_sermon' ),
 			'sermon_post',
 			'normal',
 			'high'
@@ -367,7 +454,7 @@ class tl_sermon_posts_admin extends tl_sermon_posts_core
 	function save_post()
 	{
 		// only run on the sermon_post save
-		if ( isset ( $_POST['tlsp_metabox_save'] ) )
+		if ( isset( $_POST['tlsp_metabox_save'] ) )
 		{
 		
 			global $post;
@@ -380,27 +467,32 @@ class tl_sermon_posts_admin extends tl_sermon_posts_core
 				// Sermon tags are handled automagically as well
 				
 				// Save the taxonomy: preacher
-				if ( isset ( $_POST['tlsp_preacher'] ) )
+				if ( isset( $_POST['tlsp_preacher'] ) )
 				{
 					wp_set_object_terms( $post->ID, (int)$_POST['tlsp_preacher'], 'tlsp_preacher', false );
 				}
 				
 				// Save the taxonomy: series
-				if ( isset ( $_POST['tlsp_series'] ) )
+				if ( isset( $_POST['tlsp_series'] ) )
 				{
 					wp_set_object_terms( $post->ID, (int)$_POST['tlsp_series'], 'tlsp_series', false );
 				}
 				
 				// Save the taxonomy: service
-				if ( isset ( $_POST['tlsp_service'] ) )
+				if ( isset( $_POST['tlsp_service'] ) )
 				{
 					wp_set_object_terms( $post->ID, (int)$_POST['tlsp_service'], 'tlsp_service', false );
 				}
 
-				// TODO: this needs a serious update
-				//$passages = $this->Post2Array( $_POST['tlsp_ref'] );
-				//$this->AddTerms( $post->ID, $passages );
-			
+				// On saving, the list of verses, which has been pulled from the sermon_posts
+				// database, completely overwrites whatever is in the postmeta table
+				if ( isset( $_POST['tlsp_verse_ranges'] ) )
+				{
+					foreach( $_POST['tlsp_verse_ranges'] as $key => $value )
+					{
+						
+					}
+				}
 			}
 		
 		}

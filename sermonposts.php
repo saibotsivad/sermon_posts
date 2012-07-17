@@ -16,12 +16,13 @@ if ( version_compare( get_bloginfo( 'version' ), '3.0.0' ) < 0 )
 }
 
 // Core functions are held here
-//require_once( 'plugin/core_functions.php' );
+require_once( 'plugin/core_functions.php' );
 
 // Initialization loads as little as possible
 if ( is_admin() )
 {
 	require_once( 'plugin/admin_core.php' );
+	require_once( 'plugin/admin_functions.php' );
 	$tl_sermon_posts = new tl_sermon_posts_admin;
 }
 else

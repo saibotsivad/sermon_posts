@@ -1,0 +1,32 @@
+/* hide the default date picker */ 
+div.curtime{
+	display: none !important;
+}
+
+/* hide the upload/insert button area */
+div#wp-content-media-buttons{
+	display: none !important;
+}
+
+/* style the passages */
+span.tlsp_verse_controls {
+	float: right;
+}
+#tlsp_verse_table {
+	padding: 6px;
+	margin: 0;
+	width: 100%;
+	float: right;
+	border: 1px solid #DFDFDF;
+	border-radius: 4px;
+	-moz-border-radius: 4px;
+}
+#tlsp_verse_table td {
+	padding: 2px 0 2px 0;
+	margin: 0;
+}
+#tlsp_save_button {
+	float: right;
+	padding: 4px 20px;
+	cursor: pointer;
+}
