@@ -22,9 +22,8 @@ class tl_sermon_posts_admin extends tl_sermon_posts_core
 		
 		// AJAX callbacks
 		add_action('wp_ajax_tlsp_save_reference', array( $this, 'ajax_save_reference' ) );
-		add_action('wp_ajax_tlsp_add_new_reference', array( $this, 'ajax_add_new_reference' ) );
-		add_action('wp_ajax_tlsp_sermon_reference_save', array( $this, 'ajax_sermon_reference_save' ) );
-		add_action('wp_ajax_tlsp_sermon_reference_delete', array( $this, 'ajax_sermon_reference_delete' ) );
+		add_action('wp_ajax_tlsp_delete_reference', array( $this, 'ajax_delete_reference' ) );
+		add_action('wp_ajax_tlsp_lookup_reference', array( $this, 'ajax_lookup_reference' ) );
 	}
 	
 	/**
@@ -47,6 +46,31 @@ class tl_sermon_posts_admin extends tl_sermon_posts_core
 			array( $this, 'Importing' )
 		);
 	
+	}
+	
+	/**
+	 * The AJAX passage reference deletion mechanism.
+	 *
+	 * @since 0.17
+	 * @author saibotsivad
+	*/
+	function ajax_delete_reference()
+	{
+		try {
+			$post_id = (int) $_POST['post_id'];
+			$reference_id = (int) $_POST['reference_id'];
+		}
+		catch (Exception $e)
+		{
+			echo json_encode('fail');
+			die();
+		}
+		
+		$output = array();
+		$output['response'] = tlsp_admin::delete_sermon_verse_range(array( 'post_id' => $post_id, 'reference_id' => $reference_id ));
+		$output['reference_id'] = $reference_id;
+		echo json_encode($output);
+		die();
 	}
 	
 	/**
@@ -91,15 +115,11 @@ class tl_sermon_posts_admin extends tl_sermon_posts_core
 	 * @since 0.17
 	 * @author saibotsivad
 	*/
-	function ajax_sermon_reference_delete()
+	function ajax_lookup_reference()
 	{
-		// we require all these fields
+		// required fields
 		try {
-			$verse_id = (int) $_POST['verse_id'];
-			$post_id  = (int) $_POST['post_id'];
-			
-			$verse_from    = (int) $_POST['verse_from'];
-			$verse_through = (int) $_POST['verse_through'];
+			$reference_id = (int) $_POST['reference_id'];
 		}
 		catch (Exception $e)
 		{
@@ -107,77 +127,9 @@ class tl_sermon_posts_admin extends tl_sermon_posts_core
 			die();
 		}
 		
-		// remove the verse
-		$sermon_verses = get_post_meta( $post_id, 'tlsp_sermon_reference', true );
-		if ( isset( $sermon_verses[$verse_id] ) )
-		{
-			// remove from post_meta
-			unset( $sermon_verses[$verse_id] );
-			update_post_meta( $post_id, 'tlsp_sermon_reference', $sermon_verses );
-			
-			// remove from database
-			global $wpdb;
-			$wpdb->query( $wpdb->prepare( "DELETE FROM wp_tlsp_reference WHERE wp_tlsp_reference.sermon = %d AND wp_tlsp_reference.start = %d AND wp_tlsp_reference.end = %d",
-				$post_id, $verse_from, $verse_through ) );
-			
-			// output success
-			echo json_encode(array(
-				'status'   => 'success',
-				'verse_id' => $verse_id
-			));
-		}
-		else
-		{
-			echo json_encode('fail');
-		}
-		die();
-	}
-	
-	/**
-	 * The AJAX passage reference saving mechanism.
-	 *
-	 * @since 0.17
-	 * @author saibotsivad
-	*/
-	function ajax_sermon_reference_save()
-	{
-		// we require all of these fields
-		try {
-			$verse_id = (int) $_POST['verse_id'];
-			$post_id  = (int) $_POST['post_id'];
-			
-			$from_book       = (int) $_POST['from_book'];
-			$from_chapter    = (int) $_POST['from_chapter'];
-			$from_verse      = (int) $_POST['from_verse'];
-			$through_book    = (int) $_POST['through_book'];
-			$through_chapter = (int) $_POST['through_chapter'];
-			$through_verse   = (int) $_POST['through_verse'];
-		}
-		catch (Exception $e)
-		{
-			echo json_encode('fail');
-			die();
-		}
-		
-		// generate the verse information
-		$verse_range = tlsp_generate_verse_range( $from_book, $from_chapter, $from_verse, $through_book, $through_chapter, $through_verse );
-		
-		// add the verse range to the post_meta, overwriting the old one (if it exists)
-		$sermon_verses = get_post_meta( $post_id, 'tlsp_sermon_reference', true );
-		$sermon_verses = ( is_array( $sermon_verses ) ? $sermon_verses : array() );
-		$sermon_verses[$verse_id] = $verse_range;
-		update_post_meta( $post_id, 'tlsp_sermon_reference', $sermon_verses );
-		
-		// add the verse range to the sermon_posts table
-		global $wpdb;
-		$wpdb->query( $wpdb->prepare( "DELETE FROM wp_tlsp_reference WHERE wp_tlsp_reference.sermon = %d AND wp_tlsp_reference.start = %d AND wp_tlsp_reference.end = %d",
-			$post_id, $verse_range['from_id'], $verse_range['through_id'] ) );
-		
-		// finally, generate the output
-		$output = get_post_meta( $post_id, 'tlsp_sermon_reference', true );
-		$output = $output[$verse_id];
-		$output['verse_id'] = $verse_id;
-		echo json_encode($output);
+		// lookup the verse
+		$verse = tlsp_lookup_verse( $reference_id );
+		echo json_encode( $verse );
 		die();
 	}
 	

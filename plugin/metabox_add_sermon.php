@@ -28,7 +28,7 @@ wp_nonce_field( 'tlsp_metabox_save', 'tlsp_metabox_save' );
 		</tr>
 		<tr>
 			<td>Bible Passage(s):</td>
-			<td id="tlsp_verse_list">
+			<td id="tlsp_verse_box">
 				<?php echo tlsp_admin::get_html_list_verses(); ?>
 				<p><a class="button" id="tlsp_add_verse">Add New Verse</a><a class="button" id="tlsp_cancel_button" style="display:none;">Cancel</a></p>
 				<table id="tlsp_verse_table" style="display:none;" data-tlsp_reference_id=""><tbody>

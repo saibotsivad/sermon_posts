@@ -1,13 +1,46 @@
 <?php
 
+function tlsp_lookup_verse( $reference_id )
+{
+	global $wpdb;
+	$query = "SELECT
+		r.id AS reference_id,
+		bf.name AS from_name,
+		vf.id AS from_id,
+		vf.book AS from_book,
+		vf.chapter AS from_chapter,
+		vf.verse AS from_verse,
+		
+		bt.name AS through_name,
+		vt.id AS through_id,
+		vt.book AS through_book,
+		vt.chapter AS through_chapter,
+		vt.verse AS through_verse
+	FROM
+		wp_tlsp_reference AS r
+	JOIN
+		wp_tlsp_bible AS vf ON vf.id = r.start
+	JOIN
+		wp_tlsp_book AS bf ON bf.id = vf.book
+	JOIN
+		wp_tlsp_bible AS vt ON vt.id = r.end
+	JOIN
+		wp_tlsp_book AS bt ON bt.id = vt.book
+	WHERE
+		r.id = %d";
+	$results = $wpdb->get_results( $wpdb->prepare( $query, $reference_id ), ARRAY_A );
+	return $results[0];
+}
+
 function tlsp_get_post_verses( $post_id )
 {
 	return get_post_meta( $post_id, 'tlsp_sermon_reference', true );
 }
 
 // returns an array of verse ranges and range names from mysql db
-function tlsp_get_post_verses_mysql( $post_id )
+function tlsp_get_sermon_verses_mysql( $post_id )
 {
+	// the main query gets the array of verses
 	global $wpdb;
 	$query = "SELECT
 		%d AS post_id,
@@ -35,8 +68,9 @@ function tlsp_get_post_verses_mysql( $post_id )
 		wp_tlsp_book AS bt ON bt.id = vt.book
 	WHERE
 		r.sermon = %d";
-	
 	$results = $wpdb->get_results( $wpdb->prepare( $query, $post_id, $post_id ), ARRAY_A );
+	
+	// we need to add to each verse the readable verse range name
 	$new_results = array();
 	if ( !empty( $results ) )
 	{

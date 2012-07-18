@@ -67,7 +67,7 @@ class tlsp_admin
 	public static function get_html_list_verses()
 	{
 		global $post;
-		$verses = tlsp_get_post_verses_mysql( $post->ID );
+		$verses = tlsp_get_sermon_verses_mysql( $post->ID );
 		//var_dump( $verses );
 		$html = '<ul id="tlsp_verse_list">';
 		if( !empty( $verses ) )
@@ -84,7 +84,7 @@ class tlsp_admin
 	public static function get_html_list_verse( $verse )
 	{
 		return
-			'<li class="tlsp_verse_range" data-tlsp_reference_id="'.$verse['reference_id'].'">'.
+			'<li class="tlsp_verse_range" id="tlsp_reference_'.$verse['reference_id'].'" data-tlsp_reference_id="'.$verse['reference_id'].'">'.
 				$verse['range_name'].
 				'<input type="hidden" name="tlsp_verse_ranges[]" value="'.$verse['reference_id'].'">'.
 				'<span class="tlsp_verse_controls"><a class="tlsp_edit_verse">Edit</a> or <a class="tlsp_delete_verse">Delete</a></span>'.
@@ -116,24 +116,65 @@ class tlsp_admin
 	{
 		$sermon_verses = get_post_meta( $verse['post_id'], 'tlsp_sermon_reference', true );
 		$sermon_verses = ( is_array( $sermon_verses ) ? $sermon_verses : array() );
-		$sermon_verses[] = $verse;
+		$sermon_verses[$verse['reference_id']] = $verse;
 		update_post_meta( $verse['post_id'], 'tlsp_sermon_reference', $sermon_verses );
 		return $verse;
 	}
 	
 	public static function save_sermon_verse_range_mysql( $verse )
 	{
+		return ( $verse['reference_id'] == null ?
+			self::save_sermon_verse_range_mysql_insert( $verse ) :
+			self::save_sermon_verse_range_mysql_update( $verse ) );
+	}
+	
+	public static function save_sermon_verse_range_mysql_insert( $verse )
+	{
 		global $wpdb;
-		$query = "INSERT INTO `wp_tlsp_reference` (`sermon`, `start`, `end`)
-			VALUES (%d, %d, %d)
-			ON DUPLICATE KEY UPDATE `start` = %d, `end` = %d";
 		$wpdb->insert(
 			'wp_tlsp_reference',
 			array( 'sermon' => $verse['post_id'], 'start' => $verse['from_id'], 'end' => $verse['through_id'] ),
 			array( '%d', '%d', '%d' )
 		);
-		//$wpdb->get_results( $wpdb->prepare( $query, $verse['post_id'], $verse['from_id'], $verse['through_id'], $verse['from_id'], $verse['through_id'] ), ARRAY_A );
 		$verse['reference_id'] = $wpdb->insert_id;
 		return $verse;
+	}
+	
+	public static function save_sermon_verse_range_mysql_update( $verse )
+	{
+		global $wpdb;
+		$wpdb->update(
+			'wp_tlsp_reference',
+			array( 'sermon' => $verse['post_id'], 'start' => $verse['from_id'], 'end' => $verse['through_id'] ),
+			array( 'id' => $verse['reference_id'] ),
+			array( '%d', '%d', '%d' )
+		);
+		return $verse;
+	}
+	
+	public static function delete_sermon_verse_range( $range )
+	{
+		return (
+			self::delete_sermon_verse_range_mysql( $range ) &&
+			self::delete_sermon_verse_range_postmeta( $range ) );
+	}
+	
+	public static function delete_sermon_verse_range_postmeta( $range )
+	{
+		$sermon_verses = get_post_meta( $range['post_id'], 'tlsp_sermon_reference', true );
+		if ( isset( $sermon_verses[$range['reference_id']] ) )
+		{
+			unset( $sermon_verses[$range['reference_id']] );
+		}
+		update_post_meta( $range['post_id'], 'tlsp_sermon_reference', $sermon_verses );
+		return true;
+	}
+	
+	public static function delete_sermon_verse_range_mysql( $range )
+	{
+		global $wpdb;
+		$query = "DELETE IGNORE FROM wp_tlsp_reference WHERE id = %d";
+		$wpdb->query( $wpdb->prepare( $query, intval( $range['reference_id'] ) ) );
+		return true;
 	}
 }
